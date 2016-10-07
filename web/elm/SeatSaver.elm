@@ -4,69 +4,123 @@ module SeatSaver exposing (..)
 import Html exposing (..)
 import Html.App as App
 import Html.Attributes exposing (class)
-import Html.Events exposing (..)
-import Http
-import Json.Decode as Json
-import Task
+import Html.Events exposing (onClick)
+
+import Json.Decode exposing ((:=))
+import Json.Encode
+
+import Phoenix.Socket
+import Phoenix.Channel
+import Phoenix.Push
+
+socketServer : String
+socketServer = "ws://localhost:4000/socket/websocket"
+
+channelName : String
+channelName = "seats:planner" 
 
 main : Program Never
 main =
-  App.program
-    { init = init
-    , view = view
-    , update = update
-    , subscriptions = subscriptions
-    }
+  let
+    channel = Phoenix.Channel.init channelName
 
+    (initPhxServer, phxCmd) =
+      Phoenix.Socket.init socketServer
+        |> Phoenix.Socket.withDebug
+        |> Phoenix.Socket.on "set_seats" channelName RecieveNewSeats
+        |> Phoenix.Socket.on "seat_updated" channelName SeatChange
+        |> Phoenix.Socket.join channel
+
+    modelWithEffects =
+        ( { seats = []
+          , phxSocket = initPhxServer
+          }
+        , Cmd.map PhoenixMsg phxCmd)
+  in
+    App.program
+      { init = modelWithEffects
+      , view = view
+      , update = update
+      , subscriptions = subscriptions
+      }
 
 -- MODEL
 
 type alias Seat =
   { seatNo : Int, occupied: Bool }
 
-type alias Model =
+type alias Seats =
   List Seat
 
-init : (Model, Cmd Msg)
-init =
-  let
-    seats =
-      [ { seatNo = 1, occupied = False }
-      , { seatNo = 2, occupied = False }
-      , { seatNo = 3, occupied = False }
-      , { seatNo = 4, occupied = False }
-      , { seatNo = 5, occupied = False }
-      , { seatNo = 6, occupied = False }
-      , { seatNo = 7, occupied = False }
-      , { seatNo = 8, occupied = False }
-      , { seatNo = 9, occupied = False }
-      , { seatNo = 10, occupied = False }
-      , { seatNo = 11, occupied = False }
-      , { seatNo = 12, occupied = False }
-      ]
-  in
-    (seats, Cmd.none)
+type alias Model =
+  { seats : Seats
+  , phxSocket : Phoenix.Socket.Socket Msg
+  }
 
 -- UPDATE
 
-type Msg = Toggle Seat
+type Msg
+  = Toggle Seat
+  | PhoenixMsg (Phoenix.Socket.Msg Msg)
+  | RecieveNewSeats Json.Encode.Value
+  | SeatChange Json.Encode.Value
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
     Toggle seatToToggle ->
-      let updateSeat seatFromModel =
-        if seatFromModel.seatNo == seatToToggle.seatNo then
-          { seatFromModel | occupied = not seatFromModel.occupied }
-        else seatFromModel
+      let
+        payload = encodeSeat seatToToggle
+        push' =
+          Phoenix.Push.init "request_seat" channelName
+            |> Phoenix.Push.withPayload payload
+            |> Phoenix.Push.onOk SeatChange
+        ( phxSocket, phxCmd ) = Phoenix.Socket.push push' model.phxSocket
       in
-        (List.map updateSeat model, Cmd.none)
+        ( { model 
+          | phxSocket = phxSocket }
+        , Cmd.map PhoenixMsg phxCmd
+        )
+    
+    PhoenixMsg msg ->
+      let
+        ( phxSocket, phxCmd ) = Phoenix.Socket.update msg model.phxSocket
+      in
+        ( { model | phxSocket = phxSocket }
+        , Cmd.map PhoenixMsg phxCmd
+        )
+
+    RecieveNewSeats raw ->
+      case Json.Decode.decodeValue decodeSeats raw of
+        Ok newSeats ->
+          ( { model | seats = newSeats }
+          , Cmd.none
+          )
+        Err error ->
+          ( model, Cmd.none )
+
+    SeatChange raw ->
+      case Json.Decode.decodeValue decodeSeat raw of
+        Ok newSeat ->
+          let
+            updateSeat seatFromModel =
+              if seatFromModel.seatNo == newSeat.seatNo then
+                { seatFromModel | occupied = newSeat.occupied }
+              else seatFromModel
+          in
+            ( { model | seats = List.map updateSeat model.seats }
+            , Cmd.none
+            )
+        Err error ->
+          ( model, Cmd.none )
 
 -- VIEW
 
 view : Model -> Html Msg
 view model =
-  ul [ class "seats" ] (List.map seatItem model)
+  div []
+    [ ul [ class "seats" ] (List.map seatItem model.seats)
+    ]
 
 seatItem : Seat -> Html Msg
 seatItem seat =
@@ -84,4 +138,21 @@ seatItem seat =
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
-  Sub.none
+  Phoenix.Socket.listen model.phxSocket PhoenixMsg
+
+decodeSeat : Json.Decode.Decoder Seat
+decodeSeat =
+  Json.Decode.object2 (\seatNo occupied -> (Seat seatNo occupied))
+    ("seatNo" := Json.Decode.int)
+    ("occupied" := Json.Decode.bool)
+
+decodeSeats : Json.Decode.Decoder Seats
+decodeSeats =
+  Json.Decode.at ["seats"] (Json.Decode.list decodeSeat)
+
+encodeSeat : Seat -> Json.Decode.Value
+encodeSeat seat =
+  Json.Encode.object
+    [ ("seatNo", Json.Encode.int seat.seatNo)
+    , ("occupied", Json.Encode.bool seat.occupied)
+    ]
