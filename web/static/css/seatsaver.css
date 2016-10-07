@@ -43,7 +43,7 @@ h2.header {
 }
 
 .available { background: #AAA; }
-.occupied  { background: #99cc33; }
+.occupied  { background: #ff0000; }
 
 /* Assumes 12 seats! */
 .seat:nth-child(6n+1) { clear: both}

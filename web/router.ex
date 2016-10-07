@@ -19,8 +19,9 @@ defmodule SeatSaver.Router do
     get "/", PageController, :index
   end
 
-  # Other scopes may use custom stacks.
-  # scope "/api", SeatSaver do
-  #   pipe_through :api
-  # end
+  scope "/api", SeatSaver do
+    pipe_through :api
+
+    resources "/seats", SeatController, except: [:new, :edit]
+  end
 end

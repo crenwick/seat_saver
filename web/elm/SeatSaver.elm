@@ -6,7 +6,7 @@ import Html.App as App
 import Html.Attributes exposing (class)
 import Html.Events exposing (..)
 import Http
-import Json.Decode as Json
+import Json.Decode as Json exposing ((:=))
 import Task
 
 main : Program Never
@@ -45,11 +45,14 @@ init =
       , { seatNo = 12, occupied = False }
       ]
   in
-    (seats, Cmd.none)
+    (seats, fetchSeats)
 
 -- UPDATE
 
-type Msg = Toggle Seat
+type Msg
+  = Toggle Seat
+  | SeatSeats Model
+  | FetchFail Http.Error
 
 update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
@@ -61,6 +64,12 @@ update msg model =
         else seatFromModel
       in
         (List.map updateSeat model, Cmd.none)
+
+    SeatSeats newModel ->
+      (newModel, Cmd.none)
+
+    FetchFail _ ->
+      (model, Cmd.none)
 
 -- VIEW
 
@@ -85,3 +94,22 @@ seatItem seat =
 subscriptions : Model -> Sub Msg
 subscriptions model =
   Sub.none
+
+-- HTTP
+
+fetchSeats : Cmd Msg
+fetchSeats =
+  let
+    url = "http://localhost:4000/api/seats"
+  in
+    Task.perform FetchFail SeatSeats (Http.get decodeSeats url)
+
+decodeSeats : Json.Decoder Model
+decodeSeats =
+  let
+    seat =
+      Json.object2 (\seatNo occupied -> (Seat seatNo occupied))
+        ("seatNo" := Json.int)
+        ("occupied" := Json.bool)
+  in
+    Json.at ["data"] (Json.list seat)
