@@ -2,17 +2,22 @@
 module SeatSaver exposing (..)
 
 import Html exposing (..)
-import Html.Attributes exposing (class)
 import Html.App as App
-import Html.Events exposing (onClick)
+import Html.Attributes exposing (class)
+import Html.Events exposing (..)
+import Http
+import Json.Decode as Json
+import Task
 
 main : Program Never
 main =
-  App.beginnerProgram
-    { model = init
-    , update = update
+  App.program
+    { init = init
     , view = view
+    , update = update
+    , subscriptions = subscriptions
     }
+
 
 -- MODEL
 
@@ -22,27 +27,31 @@ type alias Seat =
 type alias Model =
   List Seat
 
-init : Model
+init : (Model, Cmd Msg)
 init =
-  [ { seatNo = 1, occupied = False }
-  , { seatNo = 2, occupied = False }
-  , { seatNo = 3, occupied = False }
-  , { seatNo = 4, occupied = False }
-  , { seatNo = 5, occupied = False }
-  , { seatNo = 6, occupied = False }
-  , { seatNo = 7, occupied = False }
-  , { seatNo = 8, occupied = False }
-  , { seatNo = 9, occupied = False }
-  , { seatNo = 10, occupied = False }
-  , { seatNo = 11, occupied = False }
-  , { seatNo = 12, occupied = False }
-  ]
+  let
+    seats =
+      [ { seatNo = 1, occupied = False }
+      , { seatNo = 2, occupied = False }
+      , { seatNo = 3, occupied = False }
+      , { seatNo = 4, occupied = False }
+      , { seatNo = 5, occupied = False }
+      , { seatNo = 6, occupied = False }
+      , { seatNo = 7, occupied = False }
+      , { seatNo = 8, occupied = False }
+      , { seatNo = 9, occupied = False }
+      , { seatNo = 10, occupied = False }
+      , { seatNo = 11, occupied = False }
+      , { seatNo = 12, occupied = False }
+      ]
+  in
+    (seats, Cmd.none)
 
 -- UPDATE
 
 type Msg = Toggle Seat
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
   case msg of
     Toggle seatToToggle ->
@@ -51,7 +60,7 @@ update msg model =
           { seatFromModel | occupied = not seatFromModel.occupied }
         else seatFromModel
       in
-        List.map updateSeat model
+        (List.map updateSeat model, Cmd.none)
 
 -- VIEW
 
@@ -70,3 +79,9 @@ seatItem seat =
       , onClick (Toggle seat)
       ] 
       [ text (toString seat.seatNo) ]
+
+-- SUBSCRIPTIONS
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+  Sub.none
